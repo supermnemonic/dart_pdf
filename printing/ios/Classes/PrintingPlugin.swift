@@ -17,29 +17,26 @@
 import Flutter
 import Foundation
 
-// Dart:ffi API
-private var _printingPlugin: PrintingPlugin?
-
-@_cdecl("net_nfet_printing_set_document")
-func setDocument(job: UInt32, doc: UnsafePointer<UInt8>, size: UInt64) {
-    _printingPlugin!.jobs[job]?.setDocument(Data(bytes: doc, count: Int(size)))
-}
-
-@_cdecl("net_nfet_printing_set_error")
-func setError(job: UInt32, message: UnsafePointer<CChar>) {
-    _printingPlugin!.jobs[job]?.cancelJob(String(cString: message))
-}
-
-// End of Dart:ffi API
-
+@objc
 public class PrintingPlugin: NSObject, FlutterPlugin {
+    private static var instance: PrintingPlugin?
     private var channel: FlutterMethodChannel
     public var jobs = [UInt32: PrintJob]()
 
     init(_ channel: FlutterMethodChannel) {
         self.channel = channel
         super.init()
-        _printingPlugin = self
+        PrintingPlugin.instance = self
+    }
+
+    @objc
+    public static func setDocument(job: UInt32, doc: UnsafePointer<UInt8>, size: UInt64) {
+        instance!.jobs[job]?.setDocument(Data(bytes: doc, count: Int(size)))
+    }
+
+    @objc
+    public static func setError(job: UInt32, message: UnsafePointer<CChar>) {
+        instance!.jobs[job]?.cancelJob(String(cString: message))
     }
 
     /// Entry point
@@ -62,6 +59,7 @@ public class PrintingPlugin: NSObject, FlutterPlugin {
             let marginRight = CGFloat((args["marginRight"] as! NSNumber).floatValue)
             let marginBottom = CGFloat((args["marginBottom"] as! NSNumber).floatValue)
             let printJob = PrintJob(printing: self, index: args["job"] as! Int)
+            let dynamic = args["dynamic"] as! Bool
             jobs[args["job"] as! UInt32] = printJob
             printJob.printPdf(name: name,
                               withPageSize: CGSize(
@@ -73,7 +71,8 @@ public class PrintingPlugin: NSObject, FlutterPlugin {
                                   y: marginTop,
                                   width: width - marginRight - marginLeft,
                                   height: height - marginBottom - marginTop
-                              ), withPrinter: printer)
+                              ), withPrinter: printer,
+                              dynamically: dynamic)
             result(NSNumber(value: 1))
         } else if call.method == "sharePdf" {
             let object = args["doc"] as! FlutterStandardTypedData
@@ -85,7 +84,9 @@ public class PrintingPlugin: NSObject, FlutterPlugin {
                     width: CGFloat((args["w"] as? NSNumber)?.floatValue ?? 0.0),
                     height: CGFloat((args["h"] as? NSNumber)?.floatValue ?? 0.0)
                 ),
-                andName: args["name"] as! String
+                andName: args["name"] as! String,
+                subject: args["subject"] as? String,
+                body: args["body"] as? String
             )
             result(NSNumber(value: 1))
         } else if call.method == "convertHtml" {
